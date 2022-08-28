@@ -13,10 +13,10 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
 #include <stdarg.h>
 #include <errno.h>
 #include <sys/uio.h>
-#include "locker.h"
 
 class http_conn
 {
@@ -28,6 +28,9 @@ public:
 
   void process(); // 处理客户请求
   void init(int sockfd, const sockaddr_in &addr);
+  void close_conn();
+  bool read();  // 非阻塞读
+  bool write(); // 非阻塞写
 
 private:
   int m_sockfd;          // 该http连接的socket

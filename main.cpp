@@ -12,8 +12,8 @@
 #include <signal.h>
 #include "http_conn.h"
 
-const int MAX_FD = 65535;
-const int MAX_EVENT_NUMBER = 10000;
+#define MAX_FD 65535
+#define MAX_EVENT_NUMBER 10000
 
 // 添加信号捕捉
 void addsig(int sig, void(handler)(int))
@@ -66,6 +66,7 @@ int main(int argc, char *argv[])
   struct sockaddr_in address;
   address.sin_family = AF_INET;
   address.sin_addr.s_addr = INADDR_ANY;
+  address.sin_port = htons(port);
   bind(listenfd, (struct sockaddr *)&address, sizeof(address));
 
   // 监听
@@ -73,14 +74,14 @@ int main(int argc, char *argv[])
 
   // 创建epoll对象，事件数组，添加
   epoll_event events[MAX_EVENT_NUMBER];
-
   int epollfd = epoll_create(5);
+  // 监听文件描述符
   addfd(epollfd, listenfd, false);
   http_conn::m_epollfd = epollfd;
   while (true)
   {
     int num = epoll_wait(epollfd, events, MAX_EVENT_NUMBER, -1);
-    if (num < 0 && errno != EINTR)
+    if ((num < 0) && (errno != EINTR))
     {
       printf("epoll fail\n");
       break;
@@ -104,7 +105,36 @@ int main(int argc, char *argv[])
         // 将新的客户的数据初始化，放到数组中
         users[connfd].init(connfd, client_address);
       }
+      else if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR))
+      {
+        // 对方错误 异常断开
+        users[sockfd].close_conn();
+      }
+      else if (events[i].events & EPOLLIN)
+      {
+        // 一次性把所有数据都读取
+        if (users[sockfd].read())
+        {
+          pool->append(users + sockfd);
+        }
+        else
+        {
+          users[sockfd].close_conn();
+        }
+      }
+      else if (events[i].events & EPOLLOUT)
+      {
+        // 一次性写完所有数据
+        if (!users[sockfd].write())
+        {
+          users[sockfd].close_conn();
+        }
+      }
     }
   }
+  close(epollfd);
+  close(listenfd);
+  delete[] users;
+  delete pool;
   return 0;
 }
